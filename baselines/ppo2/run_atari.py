@@ -4,7 +4,7 @@ from baselines import logger
 from baselines.common.cmd_util import make_atari_env, atari_arg_parser
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
 from baselines.ppo2 import ppo2
-from baselines.ppo2.policies import CnnPolicy, LstmPolicy, LnLstmPolicy
+from baselines.ppo2.policies import CnnPolicy, LstmPolicy, LnLstmPolicy, CnnAttentionPolicy
 import multiprocessing
 import tensorflow as tf
 
@@ -18,9 +18,9 @@ def train(env_id, num_timesteps, seed, policy):
                             inter_op_parallelism_threads=ncpu)
     config.gpu_options.allow_growth = True #pylint: disable=E1101
     tf.Session(config=config).__enter__()
-
+    # change parameter of env to start multi envs
     env = VecFrameStack(make_atari_env(env_id, 8, seed), 4)
-    policy = {'cnn' : CnnPolicy, 'lstm' : LstmPolicy, 'lnlstm' : LnLstmPolicy}[policy]
+    policy = {'cnna' : CnnAttentionPolicy,'cnn' : CnnPolicy, 'lstm' : LstmPolicy, 'lnlstm' : LnLstmPolicy}[policy]
     ppo2.learn(policy=policy, env=env, nsteps=128, nminibatches=4,
         lam=0.95, gamma=0.99, noptepochs=4, log_interval=1,
         ent_coef=.01,
