@@ -10,7 +10,7 @@ from baselines.common import explained_variance
 
 class Model(object):
     def __init__(self, *, policy, ob_space, ac_space, nbatch_act, nbatch_train,
-                nsteps, ent_coef, vf_coef, max_grad_norm):
+                nsteps, ent_coef, vf_coef, max_grad_norm, attention_ent_coef=0.0001):
         sess = tf.get_default_session()
 
         act_model = policy(sess, ob_space, ac_space, nbatch_act, 1, reuse=False)
@@ -38,7 +38,13 @@ class Model(object):
         pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
         approxkl = .5 * tf.reduce_mean(tf.square(neglogpac - OLDNEGLOGPAC))
         clipfrac = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(ratio - 1.0), CLIPRANGE)))
-        loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef
+        if hasattr(train_model,"attention"):
+            attention_loss = -tf.reduce_mean(
+                tf.reduce_sum(train_model.attention * tf.log(tf.clip_by_value(train_model.attention, 1e-10, 1)),
+                              axis=1))
+            loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef - attention_ent_coef * attention_loss
+        else:
+            loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef
         with tf.variable_scope('model'):
             params = tf.trainable_variables()
         grads = tf.gradients(loss, params)
@@ -154,7 +160,7 @@ def constfn(val):
 def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
             vf_coef=0.5,  max_grad_norm=0.5, gamma=0.99, lam=0.95,
             log_interval=10, nminibatches=4, noptepochs=4, cliprange=0.2,
-            save_interval=0):
+            save_interval=0,attention_ent_coef=0.001):
 
     if isinstance(lr, float): lr = constfn(lr)
     else: assert callable(lr)
@@ -170,7 +176,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
 
     make_model = lambda : Model(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=nenvs, nbatch_train=nbatch_train,
                     nsteps=nsteps, ent_coef=ent_coef, vf_coef=vf_coef,
-                    max_grad_norm=max_grad_norm)
+                    max_grad_norm=max_grad_norm,attention_ent_coef=attention_ent_coef)
     if save_interval and logger.get_dir():
         import cloudpickle
         with open(osp.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:

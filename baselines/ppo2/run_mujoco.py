@@ -30,7 +30,7 @@ def train(env_id, num_timesteps, seed):
         ent_coef=0.0,
         lr=3e-4,
         cliprange=0.2,
-        total_timesteps=num_timesteps)
+        total_timesteps=num_timesteps,attention_ent_coef=0.001)
 
 
 def main():

@@ -15,6 +15,18 @@ def nature_cnn(unscaled_images):
     h3 = conv_to_fc(h3)
     return activ(fc(h3, 'fc1', nh=512, init_scale=np.sqrt(2)))
 
+def pure_cnn(unscaled_images):
+    """
+    CNN from Nature paper.
+    """
+    scaled_images = tf.cast(unscaled_images, tf.float32) / 255.
+    activ = tf.nn.relu
+    h = activ(conv(scaled_images, 'c1', nf=32, rf=8, stride=4, init_scale=np.sqrt(2)))
+    h2 = activ(conv(h, 'c2', nf=64, rf=4, stride=2, init_scale=np.sqrt(2)))
+    h3 = activ(conv(h2, 'c3', nf=64, rf=3, stride=1, init_scale=np.sqrt(2)))
+    h3 = conv_to_fc(h3)
+    return h3
+
 class LnLstmPolicy(object):
     def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, nlstm=256, reuse=False):
         nenv = nbatch // nsteps
@@ -136,9 +148,22 @@ class CnnAttentionPolicy(object):
         ob_shape = (nbatch, nh, nw, nc)
         nact = ac_space.n
         X = tf.placeholder(tf.uint8, ob_shape) #obs
+
+        actions_onehot = tf.eye(nact, batch_shape=[nbatch])
+        batch_actions_onehot = tf.reshape(actions_onehot, shape=(-1, nact))
         with tf.variable_scope("model", reuse=reuse):
             h = nature_cnn(X)
-            pi = fc(h, 'pi', nact, init_scale=0.01)
+            _input_dim = h.get_shape()[1].value
+            batch_state_input_attention = tf.reshape(tf.tile(h, [1, nact]),
+                                                          shape=(-1, _input_dim))
+            action_state_x = tf.concat([batch_state_input_attention, batch_actions_onehot], axis=1)
+            state_attention_logits = fc(action_state_x,  "attentions_output",_input_dim,init_scale=0.01)
+            state_attention_prob = tf.nn.softmax(state_attention_logits, axis=1,
+                                                        name="state_attention_result_softmax")
+            fc1 = tf.multiply(state_attention_prob, batch_state_input_attention,
+                                   name="element_wise_weighted_states")
+            pi = fc(fc1, 'batch_pi', nact, init_scale=0.01)
+            pi = tf.reshape(tf.reduce_sum(tf.multiply(pi, batch_actions_onehot),axis=1),shape=(-1,nact),name='pi')
             vf = fc(h, 'v', 1)[:,0]
 
         self.pdtype = make_pdtype(ac_space)
@@ -160,6 +185,7 @@ class CnnAttentionPolicy(object):
         self.vf = vf
         self.step = step
         self.value = value
+        self.attention = state_attention_prob
 
 
 class MlpPolicy(object):
