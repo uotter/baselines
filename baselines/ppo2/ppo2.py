@@ -1,5 +1,7 @@
 import os
 import time
+import random
+
 import joblib
 import numpy as np
 import os.path as osp
@@ -7,14 +9,18 @@ import tensorflow as tf
 from baselines import logger
 from collections import deque
 from baselines.common import explained_variance
+from baselines.ppo2.plot import AttentionPlot
+from baselines.ppo2.statistics import stats
+
 
 class Model(object):
     def __init__(self, *, policy, ob_space, ac_space, nbatch_act, nbatch_train,
-                nsteps, ent_coef, vf_coef, max_grad_norm, attention_ent_coef=0.0001):
+                 nsteps, ent_coef, vf_coef, max_grad_norm, attention_ent_coef=0.0001, sigmoid_attention=False, weak=False,deep=False):
+
         sess = tf.get_default_session()
 
-        act_model = policy(sess, ob_space, ac_space, nbatch_act, 1, reuse=False)
-        train_model = policy(sess, ob_space, ac_space, nbatch_train, nsteps, reuse=True)
+        act_model = policy(sess, ob_space, ac_space, nbatch_act, 1, reuse=False, sigmoid_attention=sigmoid_attention, weak=weak,deep=deep)
+        train_model = policy(sess, ob_space, ac_space, nbatch_train, nsteps, reuse=True, sigmoid_attention=sigmoid_attention, weak=weak,deep=deep)
 
         A = train_model.pdtype.sample_placeholder([None])
         ADV = tf.placeholder(tf.float32, [None])
@@ -38,11 +44,13 @@ class Model(object):
         pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
         approxkl = .5 * tf.reduce_mean(tf.square(neglogpac - OLDNEGLOGPAC))
         clipfrac = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(ratio - 1.0), CLIPRANGE)))
-        if hasattr(train_model,"attention"):
-            attention_loss = -tf.reduce_mean(
-                tf.reduce_sum(train_model.attention * tf.log(tf.clip_by_value(train_model.attention, 1e-10, 1)),
-                              axis=1))
-            loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef - attention_ent_coef * attention_loss
+        if hasattr(train_model, "attention"):
+            print("******** In attention loss. *********")
+            if sigmoid_attention:
+                attention_loss = -1 * (attention_ent_coef) * train_model.mean_attention_std
+            else:
+                attention_loss = (-1 * (attention_ent_coef) * train_model.attention_entropy_mean)
+            loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef + attention_loss
         else:
             loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef
         with tf.variable_scope('model'):
@@ -57,8 +65,8 @@ class Model(object):
         def train(lr, cliprange, obs, returns, masks, actions, values, neglogpacs, states=None):
             advs = returns - values
             advs = (advs - advs.mean()) / (advs.std() + 1e-8)
-            td_map = {train_model.X:obs, A:actions, ADV:advs, R:returns, LR:lr,
-                    CLIPRANGE:cliprange, OLDNEGLOGPAC:neglogpacs, OLDVPRED:values}
+            td_map = {train_model.X: obs, A: actions, ADV: advs, R: returns, LR: lr,
+                      CLIPRANGE: cliprange, OLDNEGLOGPAC: neglogpacs, OLDVPRED: values}
             if states is not None:
                 td_map[train_model.S] = states
                 td_map[train_model.M] = masks
@@ -66,6 +74,7 @@ class Model(object):
                 [pg_loss, vf_loss, entropy, approxkl, clipfrac, _train],
                 td_map
             )[:-1]
+
         self.loss_names = ['policy_loss', 'value_loss', 'policy_entropy', 'approxkl', 'clipfrac']
 
         def save(save_path):
@@ -88,12 +97,16 @@ class Model(object):
         self.initial_state = act_model.initial_state
         self.save = save
         self.load = load
-        tf.global_variables_initializer().run(session=sess) #pylint: disable=E1101
+        tf.global_variables_initializer().run(session=sess)  # pylint: disable=E1101
+
 
 class Runner(object):
 
-    def __init__(self, *, env, model, nsteps, gamma, lam):
+    def __init__(self, *, env, model, nsteps, gamma, lam, plotter, clip):
         self.env = env
+        self.clip = clip
+        self.ac_space = self.env.action_space
+        self.actdim = self.ac_space.shape[0]
         self.model = model
         nenv = env.num_envs
         self.obs = np.zeros((nenv,) + env.observation_space.shape, dtype=model.train_model.X.dtype.name)
@@ -103,12 +116,25 @@ class Runner(object):
         self.nsteps = nsteps
         self.states = model.initial_state
         self.dones = [False for _ in range(nenv)]
+        self.runner_count = 0
+        self.plot = plotter
 
     def run(self):
-        mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
+        mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [], [], [], [], [], []
         mb_states = self.states
         epinfos = []
-        for _ in range(self.nsteps):
+        local_plot_count = 0
+        for step in range(self.nsteps):
+            if (self.runner_count % 400 == 0 and self.runner_count != 0) and hasattr(self.model.act_model, "get_attention") and random.random() < 0.2:
+                if local_plot_count == 0:
+                    self.plot.remove_current_attention_file()
+                attentions = self.model.act_model.get_attention(self.obs, self.states, self.dones)
+                # print(attentions,attentions[0].shape)
+                self.plot.write_history_attention_log(",".join([str(e) for e in list(attentions.reshape((1, -1))[0])]))
+                self.plot.write_attention_log(",".join([str(e) for e in list(attentions.reshape((1, -1))[0])]))
+                # print("[%s] Testmode is %s, write the texts." % (time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime()), str(is_testing)))
+                self.plot.heatmap(df=attentions[0:(0 + self.actdim), :], save=True, show=False, file_name="model_step_" + str(self.runner_count))
+                local_plot_count += 1
             actions, values, self.states, neglogpacs = self.model.step(self.obs, self.states, self.dones)
             mb_obs.append(self.obs.copy())
             mb_actions.append(actions)
@@ -116,11 +142,15 @@ class Runner(object):
             mb_neglogpacs.append(neglogpacs)
             mb_dones.append(self.dones)
             self.obs[:], rewards, self.dones, infos = self.env.step(actions)
+            print(self.obs)
+            # clip reward between -1 and 1
+            if self.clip:
+                rewards = np.clip(rewards, -1, 1)
             for info in infos:
                 maybeepinfo = info.get('episode')
                 if maybeepinfo: epinfos.append(maybeepinfo)
             mb_rewards.append(rewards)
-        #batch of steps to batch of rollouts
+        # batch of steps to batch of rollouts
         mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
         mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
         mb_actions = np.asarray(mb_actions)
@@ -128,7 +158,7 @@ class Runner(object):
         mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
         last_values = self.model.value(self.obs, self.states, self.dones)
-        #discount/bootstrap off value fn
+        # discount/bootstrap off value fn
         mb_returns = np.zeros_like(mb_rewards)
         mb_advs = np.zeros_like(mb_rewards)
         lastgaelam = 0
@@ -137,13 +167,16 @@ class Runner(object):
                 nextnonterminal = 1.0 - self.dones
                 nextvalues = last_values
             else:
-                nextnonterminal = 1.0 - mb_dones[t+1]
-                nextvalues = mb_values[t+1]
+                nextnonterminal = 1.0 - mb_dones[t + 1]
+                nextvalues = mb_values[t + 1]
             delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal - mb_values[t]
             mb_advs[t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
         mb_returns = mb_advs + mb_values
+        self.runner_count += 1
         return (*map(sf01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)),
-            mb_states, epinfos)
+                mb_states, epinfos)
+
+
 # obs, returns, masks, actions, values, neglogpacs, states = runner.run()
 def sf01(arr):
     """
@@ -152,53 +185,62 @@ def sf01(arr):
     s = arr.shape
     return arr.swapaxes(0, 1).reshape(s[0] * s[1], *s[2:])
 
+
 def constfn(val):
     def f(_):
         return val
+
     return f
 
+
 def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
-            vf_coef=0.5,  max_grad_norm=0.5, gamma=0.99, lam=0.95,
-            log_interval=10, nminibatches=4, noptepochs=4, cliprange=0.2,
-            save_interval=0,attention_ent_coef=0.001):
-
-    if isinstance(lr, float): lr = constfn(lr)
-    else: assert callable(lr)
-    if isinstance(cliprange, float): cliprange = constfn(cliprange)
-    else: assert callable(cliprange)
+          vf_coef=0.5, max_grad_norm=0.5, gamma=0.99, lam=0.95,
+          log_interval=10, nminibatches=4, noptepochs=4, cliprange=0.2,
+          save_interval=1000, attention_ent_coef=0.001, writer=None, save_path="", sigmoid_attention=False, clip=False, weak=False, deep=False):
+    if isinstance(lr, float):
+        lr = constfn(lr)
+    else:
+        assert callable(lr)
+    if isinstance(cliprange, float):
+        cliprange = constfn(cliprange)
+    else:
+        assert callable(cliprange)
+    current_total_steps = 0
     total_timesteps = int(total_timesteps)
-
     nenvs = env.num_envs
+    print("environment numbers:", nenvs)
     ob_space = env.observation_space
     ac_space = env.action_space
     nbatch = nenvs * nsteps
     nbatch_train = nbatch // nminibatches
 
-    make_model = lambda : Model(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=nenvs, nbatch_train=nbatch_train,
-                    nsteps=nsteps, ent_coef=ent_coef, vf_coef=vf_coef,
-                    max_grad_norm=max_grad_norm,attention_ent_coef=attention_ent_coef)
+    make_model = lambda: Model(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=nenvs, nbatch_train=nbatch_train,
+                               nsteps=nsteps, ent_coef=ent_coef, vf_coef=vf_coef,
+                               max_grad_norm=max_grad_norm, attention_ent_coef=attention_ent_coef, sigmoid_attention=sigmoid_attention, weak=weak, deep=deep)
+    plotter = AttentionPlot(limited=1000, save_path=save_path)
     if save_interval and logger.get_dir():
         import cloudpickle
         with open(osp.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:
             fh.write(cloudpickle.dumps(make_model))
     model = make_model()
-    runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam)
+    runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam, plotter=plotter, clip=clip)
 
     epinfobuf = deque(maxlen=100)
     tfirststart = time.time()
 
-    nupdates = total_timesteps//nbatch
-    for update in range(1, nupdates+1):
+    nupdates = total_timesteps // nbatch
+    for update in range(1, nupdates + 1):
+        current_total_steps += nbatch
         assert nbatch % nminibatches == 0
         nbatch_train = nbatch // nminibatches
         tstart = time.time()
         frac = 1.0 - (update - 1.0) / nupdates
         lrnow = lr(frac)
         cliprangenow = cliprange(frac)
-        obs, returns, masks, actions, values, neglogpacs, states, epinfos = runner.run() #pylint: disable=E0632
+        obs, returns, masks, actions, values, neglogpacs, states, epinfos = runner.run()  # pylint: disable=E0632
         epinfobuf.extend(epinfos)
         mblossvals = []
-        if states is None: # nonrecurrent version
+        if states is None:  # nonrecurrent version
             inds = np.arange(nbatch)
             for _ in range(noptepochs):
                 np.random.shuffle(inds)
@@ -207,7 +249,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
                     mbinds = inds[start:end]
                     slices = (arr[mbinds] for arr in (obs, returns, masks, actions, values, neglogpacs))
                     mblossvals.append(model.train(lrnow, cliprangenow, *slices))
-        else: # recurrent version
+        else:  # recurrent version
             assert nenvs % nminibatches == 0
             envsperbatch = nenvs // nminibatches
             envinds = np.arange(nenvs)
@@ -228,9 +270,9 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
         fps = int(nbatch / (tnow - tstart))
         if update % log_interval == 0 or update == 1:
             ev = explained_variance(values, returns)
-            logger.logkv("serial_timesteps", update*nsteps)
+            logger.logkv("serial_timesteps", update * nsteps)
             logger.logkv("nupdates", update)
-            logger.logkv("total_timesteps", update*nbatch)
+            logger.logkv("total_timesteps", update * nbatch)
             logger.logkv("fps", fps)
             logger.logkv("explained_variance", float(ev))
             logger.logkv('eprewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
@@ -239,13 +281,24 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
             for (lossval, lossname) in zip(lossvals, model.loss_names):
                 logger.logkv(lossname, lossval)
             logger.dumpkvs()
+            log_info = {'eprewmean': safemean([epinfo['r'] for epinfo in epinfobuf])}
+            log_extra_scalar_summary(writer=writer, log_info=log_info, step=update * nbatch)
         if save_interval and (update % save_interval == 0 or update == 1) and logger.get_dir():
-            checkdir = osp.join(logger.get_dir(), 'checkpoints')
+            checkdir = os.path.join("/home/netease/data/save/baseline/checkpoints/%s_" % save_path)
+            # checkdir = osp.join(logger.get_dir(), 'checkpoints')
             os.makedirs(checkdir, exist_ok=True)
-            savepath = osp.join(checkdir, '%.5i'%update)
+            savepath = osp.join(checkdir, '%.8i' % update)
             print('Saving to', savepath)
             model.save(savepath)
     env.close()
+
+
+def log_extra_scalar_summary(writer, log_info, step):
+    for name, v in log_info.items():
+        summary = tf.Summary(value=[tf.Summary.Value(tag=name, simple_value=(v))])
+        writer.add_summary(summary, step)
+        writer.flush()
+
 
 def safemean(xs):
     return np.nan if len(xs) == 0 else np.mean(xs)
