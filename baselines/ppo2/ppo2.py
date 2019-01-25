@@ -142,7 +142,7 @@ class Runner(object):
             mb_neglogpacs.append(neglogpacs)
             mb_dones.append(self.dones)
             self.obs[:], rewards, self.dones, infos = self.env.step(actions)
-            print(self.obs)
+            # print(self.obs)
             # clip reward between -1 and 1
             if self.clip:
                 rewards = np.clip(rewards, -1, 1)
