@@ -196,8 +196,6 @@ class CnnAttentionPolicy(object):
         self.get_attention = get_attention
 
 
-
-
 class MlpAttentionPolicy(object):
     def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False, sigmoid_attention=False, weak=False, deep=False):  # pylint: disable=W0613
         ob_shape = (nbatch,) + ob_space.shape
@@ -230,6 +228,7 @@ class MlpAttentionPolicy(object):
             else:
                 state_attention_prob_expand = state_attention_prob
             fc1 = tf.multiply(state_attention_prob_expand, batch_state_input_attention, name="element_wise_weighted_states")
+            fc1 = tf.concat([fc1, X], axis=1)
             h1 = activ(fc(fc1, 'pi_fc1', nh=64, init_scale=np.sqrt(2)))
             h2 = activ(fc(h1, 'pi_fc2', nh=64, init_scale=np.sqrt(2)))
             pi = fc(h2, 'pi', actdim, init_scale=0.01)

@@ -37,10 +37,10 @@ def train(env_id, num_timesteps, seed, method):
         lr = 3e-4
         attention_ent_coef = 0.0
         sigmoid = False
-        clip_reward = True
-        weak = True
+        clip_reward = False
+        weak = False
         dot_attention = False
-        deep_attention = True
+        deep_attention = False
         fix_str = "loss-fix"
         if clip_reward:
             fix_str += "_clip"
@@ -50,7 +50,7 @@ def train(env_id, num_timesteps, seed, method):
             fix_str += "_dot"
         if deep_attention:
             fix_str += "_deep"
-
+        fix_str += "_concat"
         ################# some parameters ################################
         if method == "Attention":
             save_path = model_name + "_" + method + "_" + init_time + "_Sigmoid-" + str(sigmoid) + "_entcoef-" + str(attention_ent_coef) + "_lr" + str(lr) + "_" + fix_str
@@ -79,7 +79,7 @@ def train(env_id, num_timesteps, seed, method):
                    lr=lr,
                    cliprange=0.2,
                    total_timesteps=num_timesteps, attention_ent_coef=attention_ent_coef,
-                   writer=tb_writer, save_path=save_path, sigmoid_attention=sigmoid, clip=clip_reward, weak=weak,deep=deep_attention)
+                   writer=tb_writer, save_path=save_path, sigmoid_attention=sigmoid, clip=clip_reward, weak=weak, deep=deep_attention)
 
 
 def main():
