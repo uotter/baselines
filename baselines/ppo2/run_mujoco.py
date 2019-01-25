@@ -50,7 +50,7 @@ def train(env_id, num_timesteps, seed, method):
             fix_str += "_dot"
         if deep_attention:
             fix_str += "_deep"
-        fix_str += "_jump"
+        fix_str += "_hidden1"
         ################# some parameters ################################
         if method == "Attention":
             save_path = model_name + "_" + method + "_" + init_time + "_Sigmoid-" + str(sigmoid) + "_entcoef-" + str(attention_ent_coef) + "_lr" + str(lr) + "_" + fix_str

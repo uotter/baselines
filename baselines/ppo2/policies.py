@@ -207,8 +207,9 @@ class MlpAttentionPolicy(object):
         deep_attention = deep
         with tf.variable_scope("model", reuse=reuse):
             activ = tf.tanh
-            _input_dim = X.get_shape()[1].value
-            batch_state_input_attention = tf.reshape(tf.tile(X, [1, actdim]), shape=(-1, _input_dim))
+            h1 = activ(fc(X, 'pi_fc1', nh=64, init_scale=np.sqrt(2)))
+            _input_dim = h1.get_shape()[1].value
+            batch_state_input_attention = tf.reshape(tf.tile(h1, [1, actdim]), shape=(-1, _input_dim))
             action_state_x = tf.concat([batch_state_input_attention, batch_actions_onehot], axis=1)
             if deep_attention:
                 state_attention_logits = activ(fc(action_state_x, "attentions_output1", 128, init_scale=0.01))
@@ -229,10 +230,9 @@ class MlpAttentionPolicy(object):
                 state_attention_prob_expand = state_attention_prob
             fc1 = tf.multiply(state_attention_prob_expand, batch_state_input_attention, name="element_wise_weighted_states")
             # fc1 = tf.concat([batch_state_input_attention,fc1], axis=1)
-            h1 = activ(fc(X, 'pi_fc1', nh=64, init_scale=np.sqrt(2)))
-            h2 = activ(fc(h1, 'pi_fc2', nh=64, init_scale=np.sqrt(2)))
-            batch_h2 = tf.reshape(tf.tile(h2, [1, actdim]), shape=(-1, 64))
-            h2 = tf.concat([batch_h2,fc1], axis=1)
+            h2 = activ(fc(fc1, 'pi_fc2', nh=64, init_scale=np.sqrt(2)))
+            # batch_h2 = tf.reshape(tf.tile(h2, [1, actdim]), shape=(-1, 64))
+            # h2 = tf.concat([batch_h2,fc1], axis=1)
             pi = fc(h2, 'pi', actdim, init_scale=0.01)
             pi = tf.reshape(tf.reduce_sum(tf.multiply(pi, batch_actions_onehot), axis=1), shape=(-1, actdim), name='pi_reduce')
             h1 = activ(fc(X, 'vf_fc1', nh=64, init_scale=np.sqrt(2)))
