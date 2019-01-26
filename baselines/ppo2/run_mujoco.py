@@ -56,7 +56,8 @@ def train(env_id, num_timesteps, seed, method):
         # fix_str += "_hidden1"
         ################# some parameters ################################
         if method == "Attention":
-            save_path = model_name + "_" + method + "_" + init_time + "_Sigmoid-" + str(sigmoid) + "_entcoef-" + str(attention_ent_coef) + "_lr" + str(lr) + "_" + fix_str
+            save_path = model_name + "_" + method + "_" + init_time + "_Sigmoid-" + str(sigmoid) + "_entcoef-" + str(
+                attention_ent_coef) + "_lr" + str(lr) + "_" + fix_str
         else:
             save_path = model_name + "_" + method + "_lr" + str(lr) + "_" + init_time
         tb_dir = os.path.join("/home/netease/data/save/baseline/logs/%s" % save_path)
@@ -82,17 +83,27 @@ def train(env_id, num_timesteps, seed, method):
                    lr=lr,
                    cliprange=0.2,
                    total_timesteps=num_timesteps, attention_ent_coef=attention_ent_coef,
-                   writer=tb_writer, save_path=save_path, sigmoid_attention=sigmoid, clip=clip_reward, weak=weak, deep=deep_attention, jump=jump)
+                   writer=tb_writer, save_path=save_path, sigmoid_attention=sigmoid, clip=clip_reward, weak=weak,
+                   deep=deep_attention, jump=jump)
 
 
-def main():
+def main(*args, **kwargs):
+    if "env" in kwargs.keys():
+        game = kwargs["env"]
+    else:
+        game = "Hopper"
     parser = mujoco_arg_parser()
     parser.add_argument('--attention', help='attention or not', type=str, default="Attention")
+    parser.add_argument('--env', help='environment ID', type=str, default=game + "-v2")
     args = parser.parse_args()
     print("Going to train.")
     train(args.env, num_timesteps=args.num_timesteps, seed=args.seed, method=args.attention)
 
 
 if __name__ == '__main__':
-    for _ in range(5):
-        main()
+    envs = ["Ant", "Walker2d", "Hopper", "Humanoid", "Swimmer", "Reacher", "HalfCheetah"]
+    # envs = ["Ant", "Walker2d", "Hopper", "Humanoid", "Swimmer", "Reacher", "HalfCheetah", "InvertedDoublePendulum",
+    #         "InvertedPendulum"]
+    for env in envs:
+        for _ in range(5):
+            main(env=env)
