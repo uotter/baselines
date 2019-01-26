@@ -87,7 +87,7 @@ def train(env_id, num_timesteps, seed, method):
 
 def main():
     parser = mujoco_arg_parser()
-    parser.add_argument('--attention', help='attention or not', type=str, default="NoAttention")
+    parser.add_argument('--attention', help='attention or not', type=str, default="Attention")
     args = parser.parse_args()
     print("Going to train.")
     train(args.env, num_timesteps=args.num_timesteps, seed=args.seed, method=args.attention)
