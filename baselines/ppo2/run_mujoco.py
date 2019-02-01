@@ -36,12 +36,13 @@ def train(env_id, num_timesteps, seed, method):
         ################# some parameters ################################
         lr = 3e-4
         attention_ent_coef = 0.0
-        sigmoid = False
+        sigmoid = True
         clip_reward = False
         weak = False
         dot_attention = False
         deep_attention = False
-        jump = True
+        jump = False
+        residual = True
         fix_str = "loss-fix_concat"
         if clip_reward:
             fix_str += "_clip"
@@ -53,6 +54,8 @@ def train(env_id, num_timesteps, seed, method):
             fix_str += "_deep"
         if jump:
             fix_str += "_jump"
+        if residual:
+            fix_str += "_residual"
         # fix_str += "_hidden1"
         ################# some parameters ################################
         if method == "Attention":
@@ -84,7 +87,7 @@ def train(env_id, num_timesteps, seed, method):
                    cliprange=0.2,
                    total_timesteps=num_timesteps, attention_ent_coef=attention_ent_coef,
                    writer=tb_writer, save_path=save_path, sigmoid_attention=sigmoid, clip=clip_reward, weak=weak,
-                   deep=deep_attention, jump=jump)
+                   deep=deep_attention, jump=jump, residual=residual)
 
 
 def main(*args, **kwargs):
@@ -101,7 +104,7 @@ def main(*args, **kwargs):
 
 
 if __name__ == '__main__':
-    envs = ["Ant", "Walker2d", "Hopper", "Humanoid", "Swimmer", "Reacher", "HalfCheetah"]
+    envs = ["Ant", "Walker2d", "Hopper", "HalfCheetah", "Swimmer", "Reacher", "Humanoid"]
     # envs = ["Ant", "Walker2d", "Hopper", "Humanoid", "Swimmer", "Reacher", "HalfCheetah", "InvertedDoublePendulum",
     #         "InvertedPendulum"]
     for env in envs:

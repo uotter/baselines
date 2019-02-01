@@ -112,6 +112,6 @@ class AttentionPlot(object):
 
 
 if __name__ == "__main__":
-    filepath = r"E:/Experiments/ActionAttention/201901/Walker2d-v2_Attention_2019_01_25_00_08_06_Sigmoid-False_entcoef-0.0_lr0.0003_loss-fix_clip_weak/attention.csv"
+    filepath = r"E:/Experiments/GymGame_CartPole-v1_impala_0_0_AttentionActivation_identity_AttentionBeta_0.001_WeakAttention_False_Split_False_Sigmoid_False_fc_attention_2019_01_28_17_22_33/attention.csv"
     plot = AttentionPlot(10, "")
     plot.offline_heatmap(filepath=filepath, state_dim=17)

@@ -197,7 +197,7 @@ class CnnAttentionPolicy(object):
 
 
 class MlpAttentionPolicy(object):
-    def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False, sigmoid_attention=False, weak=False, deep=False, jump=False):  # pylint: disable=W0613
+    def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False, sigmoid_attention=False, weak=False, deep=False, jump=False,residual=True):  # pylint: disable=W0613
         ob_shape = (nbatch,) + ob_space.shape
         actdim = ac_space.shape[0]
         X = tf.placeholder(tf.float32, ob_shape, name='Ob')  # obs
@@ -234,9 +234,14 @@ class MlpAttentionPolicy(object):
                 batch_h2 = tf.reshape(tf.tile(h2, [1, actdim]), shape=(-1, 64))
                 h2 = tf.concat([batch_h2, fc1], axis=1)
             else:
-                fc1 = tf.concat([batch_state_input_attention, fc1], axis=1)
-                h1 = activ(fc(fc1, 'pi_fc1', nh=64, init_scale=np.sqrt(2)))
-                h2 = activ(fc(h1, 'pi_fc2', nh=64, init_scale=np.sqrt(2)))
+                if residual:
+                    fc1 = tf.add(batch_state_input_attention,fc1)
+                    h1 = activ(fc(fc1, 'pi_fc1', nh=64, init_scale=np.sqrt(2)))
+                    h2 = activ(fc(h1, 'pi_fc2', nh=64, init_scale=np.sqrt(2)))
+                else:
+                    fc1 = tf.concat([batch_state_input_attention, fc1], axis=1)
+                    h1 = activ(fc(fc1, 'pi_fc1', nh=64, init_scale=np.sqrt(2)))
+                    h2 = activ(fc(h1, 'pi_fc2', nh=64, init_scale=np.sqrt(2)))
             pi = fc(h2, 'pi', actdim, init_scale=0.01)
             pi = tf.reshape(tf.reduce_sum(tf.multiply(pi, batch_actions_onehot), axis=1), shape=(-1, actdim), name='pi_reduce')
             h1 = activ(fc(X, 'vf_fc1', nh=64, init_scale=np.sqrt(2)))
@@ -274,7 +279,7 @@ class MlpAttentionPolicy(object):
 
 
 class MlpDotAttentionPolicy(object):
-    def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False, sigmoid_attention=False, weak=False, deep=False):  # pylint: disable=W0613
+    def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False, sigmoid_attention=False, weak=False, deep=False,residual=True):  # pylint: disable=W0613
         ob_shape = (nbatch,) + ob_space.shape
         actdim = ac_space.shape[0]
         statedim = ob_space.shape[0]
@@ -350,7 +355,7 @@ class MlpDotAttentionPolicy(object):
 
 
 class MlpPolicy(object):
-    def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False, sigmoid_attention=False, weak=False, deep=False,jump=False):  # pylint: disable=W0613
+    def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False, sigmoid_attention=False, weak=False, deep=False,jump=False,residual=True):  # pylint: disable=W0613
         ob_shape = (nbatch,) + ob_space.shape
         actdim = ac_space.shape[0]
         X = tf.placeholder(tf.float32, ob_shape, name='Ob')  # obs
