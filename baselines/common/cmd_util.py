@@ -61,5 +61,5 @@ def mujoco_arg_parser():
     # Ant,Walker2d,Hopper,Humanoid,Swimmer,Reacher,HalfCheetah,InvertedDoublePendulum,InvertedPendulum
     # parser.add_argument('--env', help='environment ID', type=str, default="Humanoid-v2")
     parser.add_argument('--seed', help='RNG seed', type=int, default=0)
-    parser.add_argument('--num-timesteps', type=int, default=int(1e6))
+    parser.add_argument('--num-timesteps', type=int, default=int(5e6))
     return parser

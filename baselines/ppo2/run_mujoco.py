@@ -5,7 +5,7 @@ sys.path.append('/home/netease/code/baseline')
 if '/home/netease/code/openai_baselines/baselines' in sys.path:
     sys.path.remove('/home/netease/code/openai_baselines/baselines')
 import time
-from baselines.ppo2.policies import MlpPolicy, MlpAttentionPolicy, MlpDotAttentionPolicy
+from baselines.ppo2.policies import MlpPolicy, MlpAttentionPolicy, MlpDotAttentionPolicy, MlpStateAttentionPolicy
 from baselines import bench, logger
 from baselines.common.cmd_util import mujoco_arg_parser
 
@@ -36,31 +36,37 @@ def train(env_id, num_timesteps, seed, method):
         ################# some parameters ################################
         lr = 3e-4
         attention_ent_coef = 0.0
-        sigmoid = True
-        clip_reward = False
-        weak = False
-        dot_attention = False
-        deep_attention = False
-        jump = False
-        residual = True
-        fix_str = "loss-fix_concat"
-        if clip_reward:
-            fix_str += "_clip"
-        if weak:
-            fix_str += "_weak"
-        if dot_attention:
-            fix_str += "_dot"
-        if deep_attention:
-            fix_str += "_deep"
-        if jump:
-            fix_str += "_jump"
-        if residual:
-            fix_str += "_residual"
+        activation = ["softmax", "sigmoid"][0]
+        concat = ["concat", "add"][0]
+        clip = ["clip", "noclip"][1]
+        weak_str = ["weak", "noweak"][1]
+        dot = ["dot", "nodot"][1]
+        deep = ["deep", "nodeep"][1]
+        jump_str = ["jump", "nojump"][0]
+
+        sigmoid = (activation == "sigmoid")
+        clip_reward = (clip == "clip")
+        weak = (weak_str == "weak")
+        dot_attention = (dot == "dot")
+        deep_attention = (deep == "deep")
+        jump = (jump_str == "jump")
+        residual = (concat == "add")
+
+        fix_str = "loss-name-fix"
+        fix_str += "_clip-" + str(clip)
+        fix_str += "_weak-" + str(weak_str)
+        fix_str += "_dot-" + str(dot)
+        fix_str += "_deep-" + str(deep)
+        fix_str += "_jump-" + str(jump_str)
+        fix_str += "_concat-" + str(concat)
         # fix_str += "_hidden1"
         ################# some parameters ################################
         if method == "Attention":
-            save_path = model_name + "_" + method + "_" + init_time + "_Sigmoid-" + str(sigmoid) + "_entcoef-" + str(
-                attention_ent_coef) + "_lr" + str(lr) + "_" + fix_str
+            save_path = model_name + "_" + method + "_" + init_time + "_activation-" + str(activation) + "_entcoef-" + str(
+                attention_ent_coef) + "_lr-" + str(lr) + "_" + fix_str
+        elif method == "StateAttention":
+            save_path = model_name + "_" + method + "_" + init_time + "_activation-" + str(activation) + "_entcoef-" + str(
+                attention_ent_coef) + "_lr-" + str(lr) + "_" + fix_str
         else:
             save_path = model_name + "_" + method + "_lr" + str(lr) + "_" + init_time
         tb_dir = os.path.join("/home/netease/data/save/baseline/logs/%s" % save_path)
@@ -77,6 +83,8 @@ def train(env_id, num_timesteps, seed, method):
                 policy = MlpDotAttentionPolicy
             else:
                 policy = MlpAttentionPolicy
+        elif method == "StateAttention":
+            policy = MlpStateAttentionPolicy
         else:
             policy = MlpPolicy
         tb_writer = tf.summary.FileWriter(tb_dir, tf.get_default_session().graph)
@@ -96,7 +104,7 @@ def main(*args, **kwargs):
     else:
         game = "Hopper"
     parser = mujoco_arg_parser()
-    parser.add_argument('--attention', help='attention or not', type=str, default="Attention")
+    parser.add_argument('--attention', help='attention or not', type=str, default="NoAttention", choices=["Attention,NoAttention,StateAttention"])
     parser.add_argument('--env', help='environment ID', type=str, default=game + "-v2")
     args = parser.parse_args()
     print("Going to train.")
@@ -104,7 +112,8 @@ def main(*args, **kwargs):
 
 
 if __name__ == '__main__':
-    envs = ["Ant", "Walker2d", "Hopper", "HalfCheetah", "Swimmer", "Reacher", "Humanoid"]
+    # envs = ["Ant", "Walker2d", "Hopper", "HalfCheetah", "Swimmer", "Reacher", "Humanoid"]
+    envs = ["Humanoid"]
     # envs = ["Ant", "Walker2d", "Hopper", "Humanoid", "Swimmer", "Reacher", "HalfCheetah", "InvertedDoublePendulum",
     #         "InvertedPendulum"]
     for env in envs:

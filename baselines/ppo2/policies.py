@@ -197,7 +197,7 @@ class CnnAttentionPolicy(object):
 
 
 class MlpAttentionPolicy(object):
-    def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False, sigmoid_attention=False, weak=False, deep=False, jump=False,residual=True):  # pylint: disable=W0613
+    def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False, sigmoid_attention=False, weak=False, deep=False, jump=False, residual=True):  # pylint: disable=W0613
         ob_shape = (nbatch,) + ob_space.shape
         actdim = ac_space.shape[0]
         X = tf.placeholder(tf.float32, ob_shape, name='Ob')  # obs
@@ -211,7 +211,7 @@ class MlpAttentionPolicy(object):
             batch_state_input_attention = tf.reshape(tf.tile(X, [1, actdim]), shape=(-1, _input_dim))
             action_state_x = tf.concat([batch_state_input_attention, batch_actions_onehot], axis=1)
             if deep_attention:
-                state_attention_logits = activ(fc(action_state_x, "attentions_output1", 128, init_scale=0.01))
+                state_attention_logits = activ(fc(action_state_x, "attentions_output1", 64, init_scale=0.01))
                 state_attention_logits = fc(state_attention_logits, "attentions_output", _input_dim, init_scale=0.01)
             else:
                 state_attention_logits = fc(action_state_x, "attentions_output", _input_dim, init_scale=0.01)
@@ -231,11 +231,17 @@ class MlpAttentionPolicy(object):
             if jump:
                 h1 = activ(fc(X, 'pi_fc1', nh=64, init_scale=np.sqrt(2)))
                 h2 = activ(fc(h1, 'pi_fc2', nh=64, init_scale=np.sqrt(2)))
-                batch_h2 = tf.reshape(tf.tile(h2, [1, actdim]), shape=(-1, 64))
-                h2 = tf.concat([batch_h2, fc1], axis=1)
+                if residual:
+                    fc1 = activ(fc(fc1, 'actionattention_fc3', nh=64, init_scale=np.sqrt(2)))
+                    batch_h2 = tf.reshape(tf.tile(h2, [1, actdim]), shape=(-1, 64))
+                    h2 = tf.add(batch_h2, fc1)
+                else:
+                    batch_h2 = tf.reshape(tf.tile(h2, [1, actdim]), shape=(-1, 64))
+                    h2 = tf.concat([batch_h2, fc1], axis=1)
             else:
                 if residual:
-                    fc1 = tf.add(batch_state_input_attention,fc1)
+                    # no jump
+                    fc1 = tf.add(batch_state_input_attention, fc1)
                     h1 = activ(fc(fc1, 'pi_fc1', nh=64, init_scale=np.sqrt(2)))
                     h2 = activ(fc(h1, 'pi_fc2', nh=64, init_scale=np.sqrt(2)))
                 else:
@@ -279,7 +285,7 @@ class MlpAttentionPolicy(object):
 
 
 class MlpDotAttentionPolicy(object):
-    def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False, sigmoid_attention=False, weak=False, deep=False,residual=True):  # pylint: disable=W0613
+    def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False, sigmoid_attention=False, weak=False, deep=False, residual=True):  # pylint: disable=W0613
         ob_shape = (nbatch,) + ob_space.shape
         actdim = ac_space.shape[0]
         statedim = ob_space.shape[0]
@@ -355,7 +361,7 @@ class MlpDotAttentionPolicy(object):
 
 
 class MlpPolicy(object):
-    def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False, sigmoid_attention=False, weak=False, deep=False,jump=False,residual=True):  # pylint: disable=W0613
+    def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False, sigmoid_attention=False, weak=False, deep=False, jump=False, residual=True):  # pylint: disable=W0613
         ob_shape = (nbatch,) + ob_space.shape
         actdim = ac_space.shape[0]
         X = tf.placeholder(tf.float32, ob_shape, name='Ob')  # obs
@@ -363,6 +369,79 @@ class MlpPolicy(object):
             activ = tf.tanh
             h1 = activ(fc(X, 'pi_fc1', nh=64, init_scale=np.sqrt(2)))
             h2 = activ(fc(h1, 'pi_fc2', nh=64, init_scale=np.sqrt(2)))
+            pi = fc(h2, 'pi', actdim, init_scale=0.01)
+            h1 = activ(fc(X, 'vf_fc1', nh=64, init_scale=np.sqrt(2)))
+            h2 = activ(fc(h1, 'vf_fc2', nh=64, init_scale=np.sqrt(2)))
+            vf = fc(h2, 'vf', 1)[:, 0]
+            logstd = tf.get_variable(name="logstd", shape=[1, actdim],
+                                     initializer=tf.zeros_initializer())
+
+        pdparam = tf.concat([pi, pi * 0.0 + logstd], axis=1)
+
+        self.pdtype = make_pdtype(ac_space)
+        self.pd = self.pdtype.pdfromflat(pdparam)
+
+        a0 = self.pd.sample()
+        neglogp0 = self.pd.neglogp(a0)
+        self.initial_state = None
+
+        def step(ob, *_args, **_kwargs):
+            a, v, neglogp = sess.run([a0, vf, neglogp0], {X: ob})
+            return a, v, self.initial_state, neglogp
+
+        def value(ob, *_args, **_kwargs):
+            return sess.run(vf, {X: ob})
+
+        self.X = X
+        self.pi = pi
+        self.vf = vf
+        self.step = step
+        self.value = value
+
+
+class MlpStateAttentionPolicy(object):
+    def __init__(self, sess, ob_space, ac_space, nbatch, nsteps, reuse=False, sigmoid_attention=False, weak=False, deep=False, jump=False, residual=True):  # pylint: disable=W0613
+        ob_shape = (nbatch,) + ob_space.shape
+        actdim = ac_space.shape[0]
+        X = tf.placeholder(tf.float32, ob_shape, name='Ob')  # obs
+        self.attention_size = X.get_shape()[1].value
+        with tf.variable_scope("model", reuse=reuse):
+            activ = tf.tanh
+            _input_dim = X.get_shape()[1].value
+            state_attention_logits = fc(X, "attentions_output", _input_dim, init_scale=0.01)
+            if sigmoid_attention:
+                state_attention_prob = tf.nn.sigmoid(state_attention_logits, name="state_attention_result_sigmoid")
+            else:
+                state_attention_prob = tf.nn.softmax(state_attention_logits, axis=1, name="state_attention_result_softmax")
+            self.attention_entropy_mean = tf.reduce_mean(tf.reduce_sum(tf.log(tf.clip_by_value(state_attention_prob, 1e-10, 1.0)) * state_attention_prob, axis=1))
+            self.attention_mean, self.attention_std = tf.nn.moments(state_attention_prob, name="soft_std", axes=[1])
+            self.mean_attention_mean = tf.reduce_mean(self.attention_mean)
+            self.mean_attention_std = tf.reduce_mean(self.attention_std)
+            if weak:
+                state_attention_prob_expand = state_attention_prob * self.attention_size
+            else:
+                state_attention_prob_expand = state_attention_prob
+            fc1 = tf.multiply(state_attention_prob_expand, X, name="element_wise_weighted_states")
+            if jump:
+                if residual:
+                    h1 = activ(fc(X, 'pi_fc1', nh=64, init_scale=np.sqrt(2)))
+                    h2 = activ(fc(h1, 'pi_fc2', nh=64, init_scale=np.sqrt(2)))
+                    fc1 = activ(fc(fc1, 'actionattention_fc3', nh=64, init_scale=np.sqrt(2)))
+                    h2 = tf.add(h2, fc1)
+                else:
+                    h1 = activ(fc(X, 'pi_fc1', nh=64, init_scale=np.sqrt(2)))
+                    h2 = activ(fc(h1, 'pi_fc2', nh=64, init_scale=np.sqrt(2)))
+                    h2 = tf.concat([h2, fc1], axis=1)
+            else:
+                if residual:
+                    # no jump
+                    fc1 = tf.add(X, fc1)
+                    h1 = activ(fc(fc1, 'pi_fc1', nh=64, init_scale=np.sqrt(2)))
+                    h2 = activ(fc(h1, 'pi_fc2', nh=64, init_scale=np.sqrt(2)))
+                else:
+                    fc1 = tf.concat([X, fc1], axis=1)
+                    h1 = activ(fc(fc1, 'pi_fc1', nh=64, init_scale=np.sqrt(2)))
+                    h2 = activ(fc(h1, 'pi_fc2', nh=64, init_scale=np.sqrt(2)))
             pi = fc(h2, 'pi', actdim, init_scale=0.01)
             h1 = activ(fc(X, 'vf_fc1', nh=64, init_scale=np.sqrt(2)))
             h2 = activ(fc(h1, 'vf_fc2', nh=64, init_scale=np.sqrt(2)))
