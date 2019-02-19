@@ -146,9 +146,10 @@ def merge_mujuco_tb_csv(dir_path, sigmoid=False, max_step=1e7, game="mujoco"):
     return result_df_dic
 
 
-def merge_mujuco_tb_csv_for_sns(dir_path, selected_labels=[], max_step=1e7, game="mujoco"):
+def merge_mujuco_tb_csv_for_sns(dir_path, selected_labels=[], max_step=1e7, game="mujoco",paper_used = False):
     files = os.listdir(dir_path)  # 得到文件夹下的所有文件名称
     result_df_dic = {}
+    datanames_list = []
     for file in files:  # 遍历文件夹
         complete_file_path = os.path.join(dir_path, file)
         if os.path.isdir(complete_file_path):
@@ -195,12 +196,28 @@ def merge_mujuco_tb_csv_for_sns(dir_path, selected_labels=[], max_step=1e7, game
                 else:
                     activation = ""
         elif game == "atari":
-            env = filename.split("_")[2]
-            mode = "Attention" if filename.split("_")[6] != "normal" else "IMPALA"
-            if mode == "Attention":
-                activation = filename.split("_")[16] if filename.split("_")[17] == "True" else "concat"
+            if "G0_T0" in filename:
+                env = filename.split("_")[2]
+                mode = "Attention" if filename.split("_")[6] != "normal" else "IMPALA"
+                if mode == "Attention":
+                    activation = filename.split("_")[11].split("-")[1]
+                    jump = filename.split("_")[13].split("-")[1]
+                    concat = filename.split("_")[12].split("-")[1]
+                    if jump == "jump":
+                        activation = jump
+                    elif concat == "concat":
+                        activation = "concat"
+                    else:
+                        activation = activation + "_" + jump + "_" + concat
+                else:
+                    activation = ""
             else:
-                activation = ""
+                env = filename.split("_")[2]
+                mode = "Attention" if filename.split("_")[6] != "normal" else "IMPALA"
+                if mode == "Attention":
+                    activation = filename.split("_")[16] if filename.split("_")[17] == "True" else "concat"
+                else:
+                    activation = ""
         else:
             raise NotImplementedError("Not implemented for game {}".format(game))
 
@@ -215,9 +232,17 @@ def merge_mujuco_tb_csv_for_sns(dir_path, selected_labels=[], max_step=1e7, game
         else:
             # dataname = env + "_" + mode
             dataname = mode + "_" + activation
-        # if not sigmoid and activation == "Sigmoid":
-        if len(selected_labels) > 0 and activation not in selected_labels:
+        if dataname not in datanames_list:
+            datanames_list.append(dataname)
+        if len(selected_labels) > 0 and dataname not in selected_labels:
             continue
+        if paper_used:
+            if "StateAttention" in dataname:
+                dataname = "State Attention"
+            elif "ActionAttention" in dataname:
+                dataname = "Our Method"
+            else:
+                pass
         if not os.path.isdir(complete_file_path):
             current_df = pd.read_csv(complete_file_path)
             dataname_list = [dataname] * len(current_df)
@@ -234,6 +259,8 @@ def merge_mujuco_tb_csv_for_sns(dir_path, selected_labels=[], max_step=1e7, game
             else:
                 result_df = current_df
             result_df_dic[env] = result_df
+    for i in datanames_list:
+        print(i)
     return result_df_dic
 
 
@@ -306,7 +333,7 @@ def merge_logger_csv_for_sns(start, end, dir_path, selected_labels=[], envs=[], 
         mtime = time.localtime(os.path.getmtime(complete_file_path))
         ctime = time.ctime(os.path.getctime(complete_file_path))
         # if not os.path.isdir(complete_file_path) or mtime < time.strptime("2019-01-24-00-00-00", "%Y-%m-%d-%H-%M-%S"):
-        if not os.path.isdir(complete_file_path):
+        if not os.path.isdir(complete_file_path) or file == "backup":
             continue
         # print(complete_file_path)
         (filepath, tempfilename) = os.path.split(file)
@@ -361,6 +388,7 @@ def merge_logger_csv_for_sns(start, end, dir_path, selected_labels=[], envs=[], 
                     jump = filename.split("_")[16].split("-")[1]
                     concat = filename.split("_")[17].split("-")[1]
                     activation = activation + "_" + jump + "_" + concat
+                    lr = filename.split("_")[10][2:]
                     # activation = filename.split("_")[14] if len(filename.split("_")) >= 15 else "concat"
                     # activation = filename.split("_")[9].split("-")[0] if filename.split("_")[9].split("-")[1] == "True" else "Softmax"
                 elif mode == "StateAttention":
@@ -368,6 +396,7 @@ def merge_logger_csv_for_sns(start, end, dir_path, selected_labels=[], envs=[], 
                     jump = filename.split("_")[16].split("-")[1]
                     concat = filename.split("_")[17].split("-")[1]
                     activation = activation + "_" + jump + "_" + concat
+                    lr = filename.split("_")[10][2:]
                 else:
                     activation = ""
             else:
@@ -376,6 +405,7 @@ def merge_logger_csv_for_sns(start, end, dir_path, selected_labels=[], envs=[], 
                     activation = (filename.split("_")[9]).split("-")[1]
                 else:
                     activation = ""
+                lr = filename.split("_")[2][2:]
         elif game == "atari":
             env = file.split("_")[1]
             mode = "Attention" if filename.split("_")[6] != "normal" else "IMPALA"
@@ -385,6 +415,8 @@ def merge_logger_csv_for_sns(start, end, dir_path, selected_labels=[], envs=[], 
                 activation = ""
         else:
             raise NotImplementedError("Not implemented for game {}".format(game))
+        if abs(float(lr)) != 0.0003:
+            continue
         if logger_time is None or logger_time > end or logger_time < start:
             continue
         if mode == "Attention":
@@ -404,9 +436,9 @@ def merge_logger_csv_for_sns(start, end, dir_path, selected_labels=[], envs=[], 
             datanames_list.append(dataname)
         if paper_used:
             if "StateAttention" in dataname:
-                dataname = "StateAttention"
+                dataname = "State Attention"
             elif "ActionAttention" in dataname:
-                dataname = "ActionAttention"
+                dataname = "Our Method"
             else:
                 pass
         sub_files = os.listdir(complete_file_path)
@@ -473,17 +505,62 @@ def get_average_from_result(dir_path, selected_labels=[], max_step=2e8, game="at
             (filename, extension) = os.path.splitext(tempfilename)
             f_float = lambda x: float(x.split(":")[-1])
             f_int = lambda x: int(x.split(":")[-1])
+            # if sub_file.startswith("train"):
+            #     if env in ["Freeway"]:
+            #         line_columns = open(complete_sub_file_path).readline().split("\t")
+            #         columns = ["model_step","model_index","member","member_index", line_columns[4].split(":")[0].replace("total_", ""),
+            #                    line_columns[5].split(":")[0].replace("total_", ""), "raw_step"]
+            #         raw_df = pd.read_csv(complete_sub_file_path, header=None, sep='\t', engine="python", names=columns)
+            #         for index, row in raw_df.iterrows():
+            #             if row["length"] is None:
+            #                 print(index, row)
+            #         raw_df = pd.read_csv(complete_sub_file_path, header=None, sep='\t', engine="python", names=columns,
+            #                              converters={"model_index": lambda x: int(x.split(":")[0]), "reward": f_float,
+            #                                          "length": f_float, "raw_step": f_int})
+            #     else:
+            #         line_columns = open(complete_sub_file_path).readline().split("\t")
+            #         columns = ["model_index", line_columns[1].split(":")[0].replace("total_", ""),
+            #                    line_columns[2].split(":")[0].replace("total_", ""), "raw_step"]
+            #         raw_df = pd.read_csv(complete_sub_file_path, header=None, sep='\t', engine="python", names=columns)
+            #         for index, row in raw_df.iterrows():
+            #             if row["length"] is None:
+            #                 print(index, row)
+            #         raw_df = pd.read_csv(complete_sub_file_path, header=None, sep='\t', engine="python", names=columns,
+            #                              converters={"model_index": lambda x: int(x.split(":")[0]), "reward": f_float,
+            #                                          "length": f_float, "raw_step": f_int})
+            #     raw_df = raw_df.sort_values(by="model_index")
+            #     # print(raw_df.loc[raw_df.groupby(by="model_index")["step"].idxmin(),"step"])
+            #     raw_df['step'] = raw_df.groupby('model_index')['raw_step'].transform(lambda x: x.min())
+            #     dataname_list = [dataname] * len(raw_df)
+            #     dataname_se = pd.Series(dataname_list)
+            #     raw_df.insert(loc=3, column="method", value=dataname_se)
+            #     raw_df = raw_df[raw_df["step"] < max_step]
+            #     raw_df = raw_df.sort_values(by="step", ascending=False)
+            #     raw_df = raw_df.iloc[:1000, :]
+            #     print("train, {} {} {}: {}".format(env, dataname, raw_df["step"].values[0], raw_df["reward"].mean()))
             if sub_file.startswith("test"):
-                line_columns = open(complete_sub_file_path).readline().split("\t")
-                columns = ["model_index", line_columns[1].split(":")[0].replace("total_", ""),
-                           line_columns[2].split(":")[0].replace("total_", ""), "raw_step"]
-                raw_df = pd.read_csv(complete_sub_file_path, header=None, sep='\t', engine="python", names=columns)
-                for index, row in raw_df.iterrows():
-                    if row["length"] is None:
-                        print(index,row)
-                raw_df = pd.read_csv(complete_sub_file_path, header=None, sep='\t', engine="python", names=columns,
-                                     converters={"model_index": lambda x: int(x.split(":")[0]), "reward": f_float,
-                                                 "length": f_float, "raw_step": f_int})
+                if env in ["Freeway"]:
+                    line_columns = open(complete_sub_file_path).readline().split("\t")
+                    columns = ["model_step","model_index","member","member_index", line_columns[4].split(":")[0].replace("total_", ""),
+                               line_columns[5].split(":")[0].replace("total_", ""), "raw_step"]
+                    raw_df = pd.read_csv(complete_sub_file_path, header=None, sep='\t', engine="python", names=columns)
+                    for index, row in raw_df.iterrows():
+                        if row["length"] is None:
+                            print(index, row)
+                    raw_df = pd.read_csv(complete_sub_file_path, header=None, sep='\t', engine="python", names=columns,
+                                         converters={"model_index": lambda x: int(x.split(":")[0]), "reward": f_float,
+                                                     "length": f_float, "raw_step": f_int})
+                else:
+                    line_columns = open(complete_sub_file_path).readline().split("\t")
+                    columns = ["model_index", line_columns[1].split(":")[0].replace("total_", ""),
+                               line_columns[2].split(":")[0].replace("total_", ""), "raw_step"]
+                    raw_df = pd.read_csv(complete_sub_file_path, header=None, sep='\t', engine="python", names=columns)
+                    for index, row in raw_df.iterrows():
+                        if row["length"] is None:
+                            print(index, row)
+                    raw_df = pd.read_csv(complete_sub_file_path, header=None, sep='\t', engine="python", names=columns,
+                                         converters={"model_index": lambda x: int(x.split(":")[0]), "reward": f_float,
+                                                     "length": f_float, "raw_step": f_int})
                 raw_df = raw_df.sort_values(by="model_index")
                 # print(raw_df.loc[raw_df.groupby(by="model_index")["step"].idxmin(),"step"])
                 raw_df['step'] = raw_df.groupby('model_index')['raw_step'].transform(lambda x: x.min())
@@ -493,22 +570,22 @@ def get_average_from_result(dir_path, selected_labels=[], max_step=2e8, game="at
                 raw_df = raw_df[raw_df["step"] < max_step]
                 raw_df = raw_df.sort_values(by="step", ascending=False)
                 raw_df = raw_df.iloc[:1000, :]
-                print("{} {} {}: {}".format(env, dataname, raw_df["step"].values[0], raw_df["reward"].mean()))
+                print("test, {} {} {}: {}".format(env, dataname, raw_df["step"].values[0], raw_df["reward"].mean()))
     return result_df_dic
 
 
 if __name__ == "__main__":
     game = ["atari", "mujoco"][0]
-    source = ["tb", "result", "logger"][1]
+    source = ["tb", "result", "logger"][0]
     max_step = 2e8
     paper_used = True
     if platform.system().lower() == "windows":
         show = False
     else:
         show = False
-    value_or_plot = ["value", "plot"][0]
+    value_or_plot = ["value", "plot"][1]
     envs = ["Ant-v2", "HalfCheetah-v2", "Hopper-v2", "Reacher-v2", "Swimmer-v2", "Walker2d-v2", "Humanoid-v2"]
-    # envs = ["Ant-v2"]
+    # envs = ["Humanoid-v2"]
     # selected_labels = ["ActionAttention_sigmoid_jump_add", "ActionAttention_sigmoid_jump_concat",
     #                    "StateAttention_sigmoid_jump_add", "StateAttention_sigmoid_jump_concat",
     #                    "StateAttention_softmax_jump_add", "StateAttention_softmax_jump_concat",
@@ -529,9 +606,12 @@ if __name__ == "__main__":
     #                    "StateAttention_softmax_jump_add",
     #                    "ActionAttention_softmax_jump_add",
     #                    "PPO"]
-    selected_labels = []
+    # selected_labels = []
+    # atari
+    selected_labels = ["ActionAttention_jump","IMPALA"]
     start = time.strptime("2019-01-25-00-00-00", "%Y-%m-%d-%H-%M-%S")
-    end = time.strptime("2019-02-16-00-00-00", "%Y-%m-%d-%H-%M-%S")
+    # start = time.strptime("2019-02-15-10-00-00", "%Y-%m-%d-%H-%M-%S")
+    end = time.strptime("2019-02-19-00-00-00", "%Y-%m-%d-%H-%M-%S")
     if value_or_plot == "value":
         if source == "tb":
             raise NotImplementedError("value option with tb data not implemented.")
@@ -541,7 +621,7 @@ if __name__ == "__main__":
     else:
         if source == "tb":
             dir_path = r"E:\Experiments\ActionAttention\{}".format(game)
-            result_df_dic = merge_mujuco_tb_csv_for_sns(dir_path, selected_labels=selected_labels, max_step=max_step, game=game)
+            result_df_dic = merge_mujuco_tb_csv_for_sns(dir_path, selected_labels=selected_labels, max_step=max_step, game=game,paper_used=paper_used)
         elif source == "logger":
             if platform.system().lower() == "windows":
                 dir_path = r"E:\Experiments\ActionAttention\{}\logger".format(game)

@@ -34,7 +34,8 @@ def train(env_id, num_timesteps, seed, method):
         model_name = env_id
         init_time = time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime())
         ################# some parameters ################################
-        lr = 3e-4
+        # lr = 3e-4
+        lr = 5e-5
         attention_ent_coef = 0.0
         activation = ["softmax", "sigmoid"][0]
         concat = ["concat", "add"][0]
@@ -104,7 +105,7 @@ def main(*args, **kwargs):
     else:
         game = "Hopper"
     parser = mujoco_arg_parser()
-    parser.add_argument('--attention', help='attention or not', type=str, default="NoAttention", choices=["Attention,NoAttention,StateAttention"])
+    parser.add_argument('--attention', help='attention or not', type=str, default="Attention", choices=["Attention,NoAttention,StateAttention"])
     parser.add_argument('--env', help='environment ID', type=str, default=game + "-v2")
     args = parser.parse_args()
     print("Going to train.")
@@ -113,7 +114,7 @@ def main(*args, **kwargs):
 
 if __name__ == '__main__':
     # envs = ["Ant", "Walker2d", "Hopper", "HalfCheetah", "Swimmer", "Reacher", "Humanoid"]
-    envs = ["Humanoid"]
+    envs = ["Humanoid","Ant"]
     # envs = ["Ant", "Walker2d", "Hopper", "Humanoid", "Swimmer", "Reacher", "HalfCheetah", "InvertedDoublePendulum",
     #         "InvertedPendulum"]
     for env in envs:
