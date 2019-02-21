@@ -15,12 +15,12 @@ from baselines.ppo2.statistics import stats
 
 class Model(object):
     def __init__(self, *, policy, ob_space, ac_space, nbatch_act, nbatch_train,
-                 nsteps, ent_coef, vf_coef, max_grad_norm, attention_ent_coef=0.0001, sigmoid_attention=False, weak=False, deep=False, jump=False,residual=True):
+                 nsteps, ent_coef, vf_coef, max_grad_norm):
 
         sess = tf.get_default_session()
 
-        act_model = policy(sess, ob_space, ac_space, nbatch_act, 1, reuse=False, sigmoid_attention=sigmoid_attention, weak=weak, deep=deep, jump=jump,residual=residual)
-        train_model = policy(sess, ob_space, ac_space, nbatch_train, nsteps, reuse=True, sigmoid_attention=sigmoid_attention, weak=weak, deep=deep, jump=jump,residual=residual)
+        act_model = policy(sess, ob_space, ac_space, nbatch_act, 1, reuse=False)
+        train_model = policy(sess, ob_space, ac_space, nbatch_train, nsteps, reuse=True)
 
         A = train_model.pdtype.sample_placeholder([None])
         ADV = tf.placeholder(tf.float32, [None])
@@ -44,15 +44,7 @@ class Model(object):
         pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
         approxkl = .5 * tf.reduce_mean(tf.square(neglogpac - OLDNEGLOGPAC))
         clipfrac = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(ratio - 1.0), CLIPRANGE)))
-        if hasattr(train_model, "attention"):
-            print("******** In attention loss. *********")
-            if sigmoid_attention:
-                attention_loss = -1 * (attention_ent_coef) * train_model.mean_attention_std
-            else:
-                attention_loss = (-1 * (attention_ent_coef) * train_model.attention_entropy_mean)
-            loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef + attention_loss
-        else:
-            loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef
+        loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef
         with tf.variable_scope('model'):
             params = tf.trainable_variables()
         grads = tf.gradients(loss, params)
@@ -102,9 +94,8 @@ class Model(object):
 
 class Runner(object):
 
-    def __init__(self, *, env, model, nsteps, gamma, lam, plotter, clip):
+    def __init__(self, *, env, model, nsteps, gamma, lam):
         self.env = env
-        self.clip = clip
         self.ac_space = self.env.action_space
         self.actdim = self.ac_space.shape[0]
         self.model = model
@@ -117,24 +108,12 @@ class Runner(object):
         self.states = model.initial_state
         self.dones = [False for _ in range(nenv)]
         self.runner_count = 0
-        self.plot = plotter
 
     def run(self):
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [], [], [], [], [], []
         mb_states = self.states
         epinfos = []
-        local_plot_count = 0
         for step in range(self.nsteps):
-            if (self.runner_count % 400 == 0 and self.runner_count != 0) and hasattr(self.model.act_model, "get_attention") and random.random() < 0.2:
-                if local_plot_count == 0:
-                    self.plot.remove_current_attention_file()
-                attentions = self.model.act_model.get_attention(self.obs, self.states, self.dones)
-                # print(attentions,attentions[0].shape)
-                self.plot.write_history_attention_log(",".join([str(e) for e in list(attentions.reshape((1, -1))[0])]))
-                self.plot.write_attention_log(",".join([str(e) for e in list(attentions.reshape((1, -1))[0])]))
-                # print("[%s] Testmode is %s, write the texts." % (time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime()), str(is_testing)))
-                self.plot.heatmap(df=attentions[0:(0 + self.actdim), :], save=True, show=False, file_name="model_step_" + str(self.runner_count))
-                local_plot_count += 1
             actions, values, self.states, neglogpacs = self.model.step(self.obs, self.states, self.dones)
             mb_obs.append(self.obs.copy())
             mb_actions.append(actions)
@@ -144,8 +123,6 @@ class Runner(object):
             self.obs[:], rewards, self.dones, infos = self.env.step(actions)
             # print(self.obs)
             # clip reward between -1 and 1
-            if self.clip:
-                rewards = np.clip(rewards, -1, 1)
             for info in infos:
                 maybeepinfo = info.get('episode')
                 if maybeepinfo: epinfos.append(maybeepinfo)
@@ -196,8 +173,7 @@ def constfn(val):
 def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
           vf_coef=0.5, max_grad_norm=0.5, gamma=0.99, lam=0.95,
           log_interval=10, nminibatches=4, noptepochs=4, cliprange=0.2,
-          save_interval=1000, attention_ent_coef=0.001, writer=None, save_path="",
-          sigmoid_attention=False, clip=False, weak=False, deep=False, jump=False, residual=True):
+          save_interval=1000, writer=None, save_path=""):
     if isinstance(lr, float):
         lr = constfn(lr)
     else:
@@ -217,15 +193,13 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
 
     make_model = lambda: Model(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=nenvs, nbatch_train=nbatch_train,
                                nsteps=nsteps, ent_coef=ent_coef, vf_coef=vf_coef,
-                               max_grad_norm=max_grad_norm, attention_ent_coef=attention_ent_coef,
-                               sigmoid_attention=sigmoid_attention, weak=weak, deep=deep, jump=jump,residual=residual)
-    plotter = AttentionPlot(limited=1000, save_path=save_path)
+                               max_grad_norm=max_grad_norm)
     if save_interval and logger.get_dir():
         import cloudpickle
         with open(osp.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:
             fh.write(cloudpickle.dumps(make_model))
     model = make_model()
-    runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam, plotter=plotter, clip=clip)
+    runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam)
 
     epinfobuf = deque(maxlen=100)
     tfirststart = time.time()
