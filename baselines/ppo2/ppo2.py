@@ -44,15 +44,7 @@ class Model(object):
         pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
         approxkl = .5 * tf.reduce_mean(tf.square(neglogpac - OLDNEGLOGPAC))
         clipfrac = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(ratio - 1.0), CLIPRANGE)))
-        if hasattr(train_model, "attention"):
-            print("******** In attention loss. *********")
-            if sigmoid_attention:
-                attention_loss = -1 * (attention_ent_coef) * train_model.mean_attention_std
-            else:
-                attention_loss = (-1 * (attention_ent_coef) * train_model.attention_entropy_mean)
-            loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef + attention_loss
-        else:
-            loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef
+        loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef
         with tf.variable_scope('model'):
             params = tf.trainable_variables()
         grads = tf.gradients(loss, params)
